@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<title>Cesium × 25MB-2</title>
+
+<style>
+html,body,#cesium {margin:0;width:100%;height:100%;overflow:hidden}
+#tooltip{position:absolute;display:none;z-index:10;background:rgba(255,255,255,.95);
+  border:1px solid #999;border-radius:6px;padding:6px;font:14px/1 sans-serif}
+#tooltip img{width:160px;height:auto;display:block;margin-bottom:4px}
+</style>
+
+<!-- ★バージョン固定しておくと将来の破壊的変更を避けられます -->
+<link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/cesium@1.120.1/Build/Cesium/Widgets/widgets.css">
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.120.1/Build/Cesium/Cesium.js"></script>
+</head>
+<body>
+<div id="cesium"></div><div id="tooltip"></div>
+
+<script>
+/*** 0. Cesium 基本セットアップ ******************************************/
+const viewer = new Cesium.Viewer("cesium", {
+  terrain : Cesium.Terrain.fromWorldTerrain(),   // ← NEW!!
+  timeline:false, animation:false,
+  infoBox:false, selectionIndicator:false
+});
+
+/*** 1. モデル ************************************************************/
+const lon = 141.3111036342052,
+      lat = 39.235498698947865,
+      h   = 10.0;
+const position = Cesium.Cartesian3.fromDegrees(lon, lat, h);
+const hpr = Cesium.Transforms.headingPitchRollQuaternion(
+              position,
+              new Cesium.HeadingPitchRoll(
+                 Cesium.Math.toRadians(0),
+                 Cesium.Math.toRadians(0),
+                 Cesium.Math.toRadians(0)));
+
+viewer.entities.add({
+  name : "above25MB",
+  position, orientation : hpr,
+  model : {
+    uri   : "./above25MB.glb",   // ファイル名そのまま
+    scale : 0.5,
+    minimumPixelSize : 64
+  }
+});
+
+/*** 2. Billboard（Sprite 相当） ******************************************/
+const spriteInfo = [
+  { img:'1.png', pos:[  7, 5,  25], label:'① 校庭の動画を見る',
+    thumb:'thumb1.jpg', url:'https://youtu.be/i3zNW7IayQI' },
+  { img:'2.png', pos:[ 11, 6, -23], label:'② 校舎の紹介',
+    thumb:'thumb2.jpg', url:'https://youtu.be/J4syLpke3Vw' },
+  { img:'3.png', pos:[ 40, 3,  45], label:'③ 川と桜の動画',
+    thumb:'thumb3.jpg', url:'https://youtu.be/evLFb1z0xEI' },
+  { img:'4.png', pos:[-30, 8, -40], label:'④ プールエリア',
+    thumb:'thumb4.jpg', url:'https://youtu.be/wUhEjw1rA2o' },
+  { img:'5.png', pos:[ 33, 1, -44], label:'⑤ 付近の魚道',
+    thumb:'thumb5.jpg', url:'https://youtu.be/HUzOqBaEruw' }
+];
+function localToWorld(offset){
+  const mtx = Cesium.Transforms.eastNorthUpToFixedFrame(
+               Cesium.Cartesian3.fromDegrees(lon, lat, h));
+  return Cesium.Matrix4.multiplyByPoint(
+           mtx, new Cesium.Cartesian3(...offset), new Cesium.Cartesian3());
+}
+spriteInfo.forEach(d=>{
+  viewer.entities.add({
+    name : d.label,
+    position : localToWorld(d.pos),
+    billboard : {
+      image : d.img,
+      scale : 0.6,
+      verticalOrigin : Cesium.VerticalOrigin.BOTTOM
+    },
+    properties : d
+  });
+});
+
+/*** 3. ツールチップ & クリック *******************************************/
+const tip = document.getElementById("tooltip");
+let picked = null;
+const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+handler.setInputAction(m=>{
+  const p = viewer.scene.pick(m.endPosition);
+  if(p?.id && p.id.billboard){
+    picked = p.id; tip.style.display="block";
+    tip.innerHTML =
+      `<img src="${picked.properties.thumb.getValue()}">
+       <strong>${picked.properties.label.getValue()}</strong>`;
+    tip.style.left = (m.endPosition.x+12)+"px";
+    tip.style.top  = (m.endPosition.y+12)+"px";
+  }else{ picked=null; tip.style.display="none"; }
+}, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+handler.setInputAction(()=>{ if(picked){
+  window.open(picked.properties.url.getValue(),"_blank"); } },
+  Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+/*** 4. カメラ自動回転 ***************************************************/
+const REV_PER_MIN = 0.5, ANG_SPEED = REV_PER_MIN*2*Math.PI/60;
+const radius = 70, elev = 40,
+      center = Cesium.Cartesian3.fromDegrees(lon, lat, h+5);
+let auto=true, phi=0, lastUser=Date.now();
+
+viewer.camera.setView({
+  destination:center,
+  orientation:{heading:0,pitch:Cesium.Math.toRadians(-30),roll:0}
+});
+viewer.scene.postRender.addEventListener(()=>{
+  const now=Date.now();
+  if(!auto && now-lastUser>10000) auto=true;
+  if(auto){
+    phi += ANG_SPEED*viewer.clock.deltaTime;
+    viewer.camera.lookAt(center,
+      new Cesium.Cartesian3(
+        radius*Math.sin(phi), elev, radius*Math.cos(phi)));
+  }
+});
+["LEFT_DOWN","MIDDLE_DOWN","RIGHT_DOWN","WHEEL"].forEach(t=>{
+  handler.setInputAction(()=>{auto=false;lastUser=Date.now();},
+    Cesium.ScreenSpaceEventType[t]);
+});
+
+/*** 5. リサイズ **********************************************************/
+window.addEventListener("resize", ()=>viewer.resize());
+</script>
+</body>
+</html>
