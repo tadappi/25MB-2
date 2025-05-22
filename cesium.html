@@ -2,47 +2,58 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>Cesium × above25MB</title>
+<title>Cesium × 25MB-2</title>
+
 <style>
 html,body,#cesium {margin:0;width:100%;height:100%;overflow:hidden}
 #tooltip{position:absolute;display:none;z-index:10;background:rgba(255,255,255,.95);
   border:1px solid #999;border-radius:6px;padding:6px;font:14px/1 sans-serif}
 #tooltip img{width:160px;height:auto;display:block;margin-bottom:4px}
 </style>
+
 <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/cesium@latest/Build/Cesium/Widgets/widgets.css">
 <script src="https://cdn.jsdelivr.net/npm/cesium@latest/Build/Cesium/Cesium.js"></script>
 </head>
 <body>
 <div id="cesium"></div><div id="tooltip"></div>
+
 <script>
-/*** 0. Cesium 基本セットアップ ***/
-Cesium.Ion.defaultAccessToken = "";          // ←ion を使わないので空でも可
+/*** 0. Cesium 基本セットアップ ******************************************/
+Cesium.Ion.defaultAccessToken = "";          // Ion 不使用なので空文字で OK
 const viewer = new Cesium.Viewer("cesium", {
-  terrainProvider: Cesium.createWorldTerrain(),
-  timeline:false, animation:false, infoBox:false, selectionIndicator:false
+  terrainProvider : Cesium.createWorldTerrain(),
+  timeline        : false,
+  animation       : false,
+  infoBox         : false,
+  selectionIndicator : false
 });
-/*** 1. モデル本体（above25MB.glb） ***/
-const lon = 141.3111036342052,
-      lat =  39.235498698947865,
-      h   =  10.0;                           // 高さ[m]
+
+/*** 1. モデル本体 *******************************************************/
+const lon = 141.3111036342052;   // 経度 (°E)
+const lat =  39.235498698947865; // 緯度 (°N)
+const h   =  10.0;               // 高さ (m)
 const position = Cesium.Cartesian3.fromDegrees(lon, lat, h);
+
 const hpr = Cesium.Transforms.headingPitchRollQuaternion(
-              position,
-              new Cesium.HeadingPitchRoll(               // ★向きはここで
-                 Cesium.Math.toRadians(  0),             // heading(°E)
-                 Cesium.Math.toRadians(  0),             // pitch
-                 Cesium.Math.toRadians(  0)));           // roll
+  position,
+  new Cesium.HeadingPitchRoll(
+    Cesium.Math.toRadians(0),   // heading
+    Cesium.Math.toRadians(0),   // pitch
+    Cesium.Math.toRadians(0))); // roll
+
 const model = viewer.entities.add({
-  name : "above25MB",
-  position, orientation : hpr,
+  name      : "above25MB",
+  position  : position,
+  orientation : hpr,
   model : {
-    uri   : "./above25MB.glb",
-    scale : 0.5,             // ★Blender で 0.5 倍にしていたので再現
+    uri   : "./above25MB.glb",  // ★GLB 名を変えたならここを修正★
+    scale : 0.5,                // Blender の 0.5 倍を再現
     minimumPixelSize : 64
   }
 });
-/*** 2. Billboard（元の Sprite 相当） ***/
+
+/*** 2. Billboard（旧 Sprite） *******************************************/
 const spriteInfo = [
   { img:'1.png', pos:[  7, 5,  25], label:'① 校庭の動画を見る',
     thumb:'thumb1.jpg', url:'https://youtu.be/i3zNW7IayQI' },
@@ -55,63 +66,88 @@ const spriteInfo = [
   { img:'5.png', pos:[ 33, 1, -44], label:'⑤ 付近の魚道',
     thumb:'thumb5.jpg', url:'https://youtu.be/HUzOqBaEruw' }
 ];
-function localToWorld(offset){      // ENU ローカル (m) → 世界座標
-  const enu = Cesium.Cartesian3.fromDegrees(lon, lat, h);
-  const mtx = Cesium.Transforms.eastNorthUpToFixedFrame(enu);
+
+// ENU ローカル → 世界座標
+function localToWorld(offset){
+  const mtx = Cesium.Transforms.eastNorthUpToFixedFrame(
+               Cesium.Cartesian3.fromDegrees(lon, lat, h));
   return Cesium.Matrix4.multiplyByPoint(
            mtx, new Cesium.Cartesian3(...offset), new Cesium.Cartesian3());
 }
+
 spriteInfo.forEach(d=>{
   viewer.entities.add({
-    name : d.label,
-    position : localToWorld(d.pos),
+    name      : d.label,
+    position  : localToWorld(d.pos),
     billboard : {
-      image : d.img,
+      image : d.img,   // ★ファイル名を変えたら修正★
       scale : 0.6,
       verticalOrigin : Cesium.VerticalOrigin.BOTTOM
     },
-    properties : d           // ツールチップ用に丸ごと保存
+    properties : d    // ツールチップ用
   });
 });
 
-/*** 3. ツールチップ（hover） & クリックで新規タブ ***/
+/*** 3. ツールチップ & クリックリンク ***********************************/
+const tip  = document.getElementById("tooltip");
+let picked = null;
 const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-const tip     = document.getElementById("tooltip");
-let   picked  = null;
-handler.setInputAction(m=>{
-  const pick = viewer.scene.pick(m.endPosition);
-  if(pick?.id && pick.id.billboard){ picked = pick.id; tip.style.display="block";
-    tip.innerHTML = `<img src="${picked.properties.thumb.getValue()}">
-                     <strong>${picked.properties.label.getValue()}</strong>`;
-    tip.style.left = (m.endPosition.x+12)+"px";
-    tip.style.top  = (m.endPosition.y+12)+"px";
-  }else{ picked=null; tip.style.display="none"; }
-}, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
-handler.setInputAction(()=>{ if(picked){
-  window.open(picked.properties.url.getValue(),"_blank"); } },
-  Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-/*** 4. カメラ自動回転（操作すると停止→10秒後に再開） ***/
-const REV_PER_MIN = 0.5,   ANG_SPEED = REV_PER_MIN*2*Math.PI/60;
-const radius = 70, elev = 40, center = Cesium.Cartesian3.fromDegrees(lon,lat,h+5);
-let auto=true, tLast=Date.now(), phi=0, lastUser=Date.now();
-viewer.camera.setView({destination:center,
-  orientation:{heading:0,pitch:Cesium.Math.toRadians(-30),roll:0}});
+// Hover
+handler.setInputAction(m=>{
+  const p = viewer.scene.pick(m.endPosition);
+  if(p?.id && p.id.billboard){
+    picked = p.id; tip.style.display="block";
+    tip.innerHTML =
+      `<img src="${picked.properties.thumb.getValue()}">
+       <strong>${picked.properties.label.getValue()}</strong>`;
+    tip.style.left = (m.endPosition.x + 12) + "px";
+    tip.style.top  = (m.endPosition.y + 12) + "px";
+  }else{
+    picked = null; tip.style.display="none";
+  }
+}, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+// Click
+handler.setInputAction(()=>{
+  if(picked){
+    window.open(picked.properties.url.getValue(), "_blank");
+  }
+}, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+/*** 4. カメラ自動回転 ***************************************************/
+const REV_PER_MIN = 0.5;
+const ANG_SPEED   = REV_PER_MIN*2*Math.PI/60;
+const radius      = 70;
+const elev        = 40;
+const center      = Cesium.Cartesian3.fromDegrees(lon, lat, h+5);
+
+let auto = true, phi = 0, lastUser = Date.now();
+
+viewer.camera.setView({
+  destination : center,
+  orientation : {heading:0, pitch:Cesium.Math.toRadians(-30), roll:0}
+});
+
 viewer.scene.postRender.addEventListener(()=>{
-  const now=Date.now();
-  if(!auto && now-lastUser>10000) auto=true;
+  const now = Date.now();
+  if(!auto && now - lastUser > 10000) auto = true;
   if(auto){
-    phi += ANG_SPEED*viewer.clock.deltaTime;
-    const x = radius*Math.sin(phi), z = radius*Math.cos(phi);
-    viewer.camera.lookAt(center,new Cesium.Cartesian3(x,elev,z));
+    phi += ANG_SPEED * viewer.clock.deltaTime;
+    const x = radius * Math.sin(phi);
+    const z = radius * Math.cos(phi);
+    viewer.camera.lookAt(center, new Cesium.Cartesian3(x, elev, z));
   }
 });
-["LEFT_DOWN","MIDDLE_DOWN","RIGHT_DOWN","WHEEL"].forEach(type=>{
-  handler.setInputAction(()=>{auto=false;lastUser=Date.now();},
-    Cesium.ScreenSpaceEventType[type]); });
 
-/*** 5. 画面リサイズ ***/
-window.addEventListener("resize",()=>viewer.resize());
+// ユーザー操作で自動回転を一時停止
+["LEFT_DOWN","MIDDLE_DOWN","RIGHT_DOWN","WHEEL"].forEach(t=>{
+  handler.setInputAction(()=>{auto=false; lastUser=Date.now();},
+    Cesium.ScreenSpaceEventType[t]);
+});
+
+/*** 5. 画面リサイズ *****************************************************/
+window.addEventListener("resize", ()=>viewer.resize());
 </script>
 </body>
 </html>
